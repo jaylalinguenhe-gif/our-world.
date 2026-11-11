@@ -128,7 +128,7 @@ const questions=[
  {q:'de que cor era a flor que estava dentro da caixa que te dei no dia de são valentim?',type:'choice',opts:['Rosa','Branca','Roxa','Vermelha'],check:v=>v==='Roxa'},
  {q:'what day did i ask you to be my girlfriend and what did i give u?',type:'text',placeholder:'you can answer in English or Portuguese…',check:v=>{const s=norm(v);const date=/(october 30|30 de outubro|30 outubro|30\/10)/.test(s);const sweets=/(chocolate|goma|gummy|doces|sweet)/.test(s);const note=/(carta|letter)/.test(s);const heart=/(croche|crochet|crochê|coracao|coração)/.test(s);return date&&[sweets,note,heart].filter(Boolean).length>=2}},
  {q:'qual foi o dia em que tivemos a “festa de pijama”?',type:'choice',opts:['January 1st / 1 de janeiro','January 2nd / 2 de janeiro','January 3rd / 3 de janeiro','January 4th / 4 de janeiro'],check:v=>v.startsWith('January 2nd')},
- {q:'what did i do on your birthday this year?',type:'accept'},
+ {q:'quando começámos a namorar, tínhamos uma foto bem específica que era a nossa foto preferida; descreve como era a foto.',type:'photo-description'},
  {q:'what do u think i most like in you?',type:'special',message:'embora estejas certa porque a minha resposta seria tudo, se eu realmente tivesse que escolher, diria o teu coração…'},
  {q:'qual é o nome que eu gosto de te chamar?',type:'choice',opts:['Lukenha','Lucks','Vi','Nay'],check:v=>v==='Lukenha'},
  {q:'o que é que não gostas em mim (personalidade ou comportamento) que gostarias que eu mudasse?',type:'accept'},
@@ -136,6 +136,7 @@ const questions=[
 ];
 function norm(s){return (s||'').toLocaleLowerCase('pt').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[’']/g,' ').replace(/[.,!?;:]/g,' ').replace(/\s+/g,' ').trim()}
 let index=0;
+let photoQuestionAttempts=0;
 const welcome=document.getElementById('welcome'),quiz=document.getElementById('quiz'),letterScreen=document.getElementById('letter');
 function show(el){[welcome,quiz,letterScreen].forEach(x=>x.classList.remove('active'));el.classList.add('active')}
 const allowedNames=new Set(['lukeny nayma','nayma fila','nayma','lukeny']);
@@ -157,7 +158,7 @@ function renderQuestion(){
  const q=questions[index];document.body.classList.toggle('quiz-dark',index>=2);document.getElementById('counter').textContent=`question ${String(index+1).padStart(2,'0')} / 10`;
  document.getElementById('progressFill').style.width=((index+1)/10*100)+'%';
  typewrite(document.getElementById('questionText'),q.q,27);
- const area=document.getElementById('answerArea');area.innerHTML='';document.getElementById('feedback').textContent='';document.getElementById('questionNote').textContent='';
+ const area=document.getElementById('answerArea');area.innerHTML='';document.getElementById('feedback').textContent='';document.getElementById('questionNote').textContent=q.note||'';
  if(q.type==='choice'){
   q.opts.forEach(opt=>{const b=document.createElement('button');b.className='option';b.textContent=opt;b.addEventListener('click',()=>submit(opt));area.appendChild(b)});
  }else{
@@ -173,6 +174,25 @@ function submit(value){
  const q=questions[index];const feedback=document.getElementById('feedback');
  if(q.type==='special'){feedback.textContent=q.message;document.getElementById('questionNote').textContent='';document.getElementById('answerArea').innerHTML='';addNext();return}
  if(q.type==='accept'||q.acceptAny){advance();return}
+ if(q.type==='photo-description'){
+  const s=norm(value);
+  const bed=/(cama|deitad)/.test(s);
+  const tongue=/(lingua|careta)/.test(s);
+  const pout=/(beicinho|bico|dedos|paz|peace|v\s*\+|dois dedos)/.test(s);
+  const pink=/(rosa|cor de rosa)/.test(s);
+  if([bed,tongue,pout,pink].filter(Boolean).length>=3){advance();return}
+  photoQuestionAttempts++;
+  if(photoQuestionAttempts>=2){
+   q.q='como é que estava o meu cabelo e qual era a cor do teu postiço?';
+   q.type='text';
+   q.note='A resposta era: estávamos deitadas na cama; eu estava a fazer careta, com a língua de fora, e tu estavas a fazer beicinho com os dedos em ✌🏽. As duas estávamos vestidas de rosa.';
+   q.check=v=>{const a=norm(v);const hair=/(sem dreads|nao tinha dreads|ainda nao tinha dreads|cabelo natural|sem rastas)/.test(a);const color=/(vinho|vermelh)/.test(a);return hair&&color};
+   renderQuestion();
+   return;
+  }
+  feedback.textContent='hmm… lembra bem';
+  return;
+ }
  if(q.check(value)){advance();return}
  feedback.textContent='hmm… lembra bem';
 }
@@ -193,33 +213,47 @@ function revealLetterAfterPlayback(){
  paper.classList.add('music-ready');
  typewrite(document.getElementById('letterText'),letter,12);
 }
-function onYouTubeIframeAPIReady(){ /* API readiness is handled when the user taps dar play. */ }
+// Load the YouTube API once, before the visitor presses play. This avoids
+// replacing its global ready callback during the click (which could leave the
+// button doing nothing if the API is already loading or finishes unexpectedly).
+let resolveYouTubeApi;
+const youTubeApiReady=new Promise(resolve=>{resolveYouTubeApi=resolve});
+window.onYouTubeIframeAPIReady=()=>resolveYouTubeApi(true);
+const youTubeApiScript=document.createElement('script');
+youTubeApiScript.src='https://www.youtube.com/iframe_api';
+youTubeApiScript.async=true;
+youTubeApiScript.onerror=()=>resolveYouTubeApi(false);
+document.head.appendChild(youTubeApiScript);
 function startMusic(){
+ if(ytPlayer){ytPlayer.playVideo();return}
  musicPlayer.hidden=false;
  ytPlayer=new YT.Player('musicPlayer',{
   width:'240',height:'135',videoId:musicVideo,
   playerVars:{autoplay:1,controls:1,playsinline:1,rel:0,modestbranding:1},
   events:{
-   onReady:event=>{event.target.setVolume(30);event.target.playVideo()},
+   onReady:event=>{musicButton.disabled=false;event.target.setVolume(30);event.target.playVideo()},
    onStateChange:event=>{
-    if(event.data===YT.PlayerState.PLAYING){musicStarted=true;revealLetterAfterPlayback();musicButton.textContent='pausar'}
-    else if(event.data===YT.PlayerState.PAUSED){musicButton.textContent='dar play'}
-    else if(event.data===YT.PlayerState.ENDED){musicButton.textContent='dar play'}
-   }
+    if(event.data===YT.PlayerState.PLAYING){musicStarted=true;revealLetterAfterPlayback()}
+   },
+   onError:()=>{ytPlayer=null;musicPlayer.hidden=true;musicButton.disabled=false}
   }
  });
 }
-musicButton.addEventListener('click',()=>{
- if(!ytPlayer){
-  if(window.YT&&window.YT.Player){startMusic()}else{
-   musicButton.disabled=true;
-   window.onYouTubeIframeAPIReady=()=>{musicButton.disabled=false;startMusic()};
-   const api=document.createElement('script');api.src='https://www.youtube.com/iframe_api';document.head.appendChild(api);
+musicButton.addEventListener('click',async()=>{
+ musicButton.disabled=true;
+ try{
+  if(!window.YT||!window.YT.Player){
+   const loaded=await Promise.race([youTubeApiReady,new Promise(resolve=>setTimeout(()=>resolve(false),10000))]);
+   if(!loaded||!window.YT||!window.YT.Player)throw new Error('YouTube player could not be loaded');
   }
-  return;
+  if(!ytPlayer)startMusic();
+  else if(ytPlayer.getPlayerState()===YT.PlayerState.PLAYING)ytPlayer.pauseVideo();
+  else ytPlayer.playVideo();
+ }catch(error){
+  musicButton.disabled=false;
+  musicButton.textContent='dar play';
+  console.error(error);
  }
- const state=ytPlayer.getPlayerState();
- if(state===YT.PlayerState.PLAYING)ytPlayer.pauseVideo();else ytPlayer.playVideo();
 });
 </script>
 </body>
